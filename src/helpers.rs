@@ -25,3 +25,27 @@ pub fn get_exception<T>(err: &T) -> crate::types::Exception
 pub (in crate) fn new_uuid() -> String {
     rollbar_rust::Uuid::new().to_string()
 }
+
+/// Gathers the current thread's backtrace and returns it for use in a Rollbar
+/// trace event.
+/// 
+/// This method is used internally by Rollbar to gather the current thread's
+/// backtrace and is not intended to be called directly by consumers of this
+/// crate.
+pub fn get_backtrace_frames() -> Vec<crate::types::Frame> {
+    let backtrace = backtrace::Backtrace::new();
+    let mut frames: Vec<crate::types::Frame> = backtrace.frames().iter()
+        .flat_map(|frames| frames.symbols())
+        .map(|symbol| crate::types::Frame {
+            filename: symbol.filename().map_or_else(|| "".to_owned(), |f| format!("{}", f.display())),
+            lineno: symbol.lineno().map(|l| l as i32),
+            colno: symbol.colno().map(|c| c as i32),
+            method: symbol.name().map(|n| format!("{}", n)),
+            ..Default::default()
+        }).collect();
+
+    // Remove the last frame, which is this function.
+    frames.truncate(frames.len().saturating_sub(1));
+
+    frames
+}

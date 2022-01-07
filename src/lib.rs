@@ -30,23 +30,24 @@ lazy_static::lazy_static! {
 }
 
 #[cfg(feature = "threaded")]
+#[cfg(not(feature = "async"))]
 lazy_static::lazy_static! {
     pub (in crate) static ref TRANSPORT: ThreadedTransport = ThreadedTransport::new(&TransportConfig::default()).unwrap();
 }
 
-pub fn set_token(token: &str) {
+pub fn set_token<S: ToString>(token: S) {
     CONFIG.write().unwrap().access_token = Some(token.to_string());
 }
 
-pub fn set_environment(environment: &str) {
+pub fn set_environment<S: ToString>(environment: S) {
     CONFIG.write().unwrap().environment = Some(environment.to_string());
 }
 
-pub fn set_host(host: &str) {
+pub fn set_host<S: ToString>(host: S) {
     CONFIG.write().unwrap().host = Some(host.to_string());
 }
 
-pub fn set_code_version(code_version: &str) {
+pub fn set_code_version<S: ToString>(code_version: S) {
     CONFIG.write().unwrap().code_version = Some(code_version.to_string());
 }
 
@@ -54,15 +55,15 @@ pub fn set_log_level(level: types::Level) {
     CONFIG.write().unwrap().log_level = level;
 }
 
-pub fn set_platform(platform: &str) {
+pub fn set_platform<S: ToString>(platform: S) {
     CONFIG.write().unwrap().platform = Some(platform.to_string());
 }
 
-pub fn set_framework(framework: &str) {
+pub fn set_framework<S: ToString>(framework: S) {
     CONFIG.write().unwrap().framework = Some(framework.to_string());
 }
 
-pub fn set_context(context: &str) {
+pub fn set_context<S: ToString>(context: S) {
     CONFIG.write().unwrap().context = Some(context.to_string());
 }
 

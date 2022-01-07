@@ -105,18 +105,8 @@ macro_rules! rollbar_format {
 
     (error = $err:expr $(,$key:ident = $val:expr)*) => {
         {
-            let backtrace = backtrace::Backtrace::new();
+            let mut frames = $crate::helpers::get_backtrace_frames();
             let line = line!() - 3;
-
-            let mut frames: Vec<$crate::types::Frame> = backtrace.frames().iter()
-            .flat_map(|frames| frames.symbols())
-            .map(|symbol| $crate::types::Frame {
-                filename: symbol.filename().map_or_else(|| "".to_owned(), |f| format!("{}", f.display())),
-                lineno: symbol.lineno().map(|l| l as i32),
-                colno: symbol.colno().map(|c| c as i32),
-                method: symbol.name().map(|n| format!("{}", n)),
-                ..Default::default()
-            }).collect();
 
             frames.push($crate::types::Frame {
                 filename: file!().to_string(),
