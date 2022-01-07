@@ -7,11 +7,15 @@
 /// # Examples
 /// ## Messages
 /// ```rust
+/// use rollbar_rs::*;
+/// 
 /// rollbar!(Debug message = "This is an example message", { foo: "bar" }, context = "project#index");
 /// ```
 /// 
 /// ## Errors
 /// ```rust
+/// use rollbar_rs::*;
+/// 
 /// let err = std::io::Error::new(std::io::ErrorKind::Other, "Some error");
 /// rollbar!(Critical error = err, context = "project#index");
 /// ```
@@ -21,16 +25,26 @@
 /// the `custom` field. A `map!` macro is provided to simplify the generation of 
 /// the appropriate data structure.
 /// ```rust
-/// rollbar!(Info message = "This is an example with custom fields.", { foo: "bar" }, custom = map!{ owner = "Bob" });
+/// use rollbar_rs::*;
+/// 
+/// rollbar!(Info message = "This is an example with custom fields.", { foo: "bar" }, custom = map!{ owner: "Bob" });
 /// ```
 #[macro_export]
 macro_rules! rollbar {
-    ($($key:ident = $val:expr),*) => {
-        $crate::report_raw(rollbar_format!($($key = $val),*));
+    (message = $msg:expr $(, { $($extra_key:ident: $extra_val:expr),+ })? $(,$key:ident = $val:expr)*) => {
+        $crate::report($crate::rollbar_format!(message = $msg $(, { $($extra_key: $extra_val),+ })? $(, $key = $val)*));
     };
 
-    ($level:ident $($key:ident = $val:expr),*) => {
-        $crate::report_raw(rollbar_format!($level $($key = $val),*));
+    (error = $err:expr $(,$key:ident = $val:expr)*) => {
+        $crate::report($crate::rollbar_format!(error = $err $(, $key = $val)*));
+    };
+    
+    ($level:ident message = $msg:expr $(, { $($extra_key:ident: $extra_val:expr),+ })? $(,$key:ident = $val:expr)*) => {
+        $crate::report($crate::rollbar_format!($level message = $msg $(, { $($extra_key: $extra_val),+ })? $(, $key = $val)*));
+    };
+
+    ($level:ident error = $err:expr $(,$key:ident = $val:expr)*) => {
+        $crate::report($crate::rollbar_format!($level error = $err $(, $key = $val)*));
     };
 }
 
@@ -44,15 +58,19 @@ macro_rules! rollbar {
 /// # Examples
 /// ## Messages
 /// ```rust
-/// let client = rollbar::Client::new(rollbar::HttpTransport::default()), rollbar::Configuration::default());
-/// client.report(rollbar::rollbar_format!(Debug message = "This is an example message", { foo: "bar" }, context = "project#index"));
+/// use rollbar_rs::*;
+/// 
+/// let client = Client::with_default_transport(Configuration::default()).unwrap();
+/// client.report(rollbar_format!(Debug message = "This is an example message", { foo: "bar" }, context = "project#index"));
 /// ```
 /// 
 /// ## Errors
 /// ```rust
+/// use rollbar_rs::*;
+/// 
 /// let err = std::io::Error::new(std::io::ErrorKind::Other, "Some error");
-/// let client = rollbar::Client::new(rollbar::HttpTransport::default()), rollbar::Configuration::default());
-/// client.report(rollbar::rollbar_format!(Critical error = err, context = "project#index"));
+/// let client = rollbar_rs::Client::with_default_transport(rollbar_rs::Configuration::default()).unwrap();
+/// client.report(rollbar_format!(Critical error = err, context = "project#index"));
 /// ```
 /// 
 /// ## Custom Fields
@@ -60,40 +78,32 @@ macro_rules! rollbar {
 /// the `custom` field. A `map!` macro is provided to simplify the generation of 
 /// the appropriate data structure.
 /// ```rust
-/// let client = rollbar::Client::new(rollbar::HttpTransport::default()), rollbar::Configuration::default());
-/// client.report(rollbar::rollbar_format!(Info message = "This is an example with custom fields.", { foo: "bar" }, custom = map!{ owner = "Bob" }));
+/// use rollbar_rs::*;
+/// 
+/// let client = rollbar_rs::Client::with_default_transport(rollbar_rs::Configuration::default()).unwrap();
+/// client.report(rollbar_format!(Info message = "This is an example with custom fields.", { foo: "bar" }, custom = map!{ owner: "Bob" }));
 /// ```
 #[macro_export]
 macro_rules! rollbar_format {
     (message = $msg:expr $(, { $($extra_key:ident: $extra_val:expr),+ })? $(,$key:ident = $val:expr)*) => {
-        rollbar_format!(Info message = $msg $(, { $($extra_key = $extra_val),+ })? $(,$key = $val)*)
-    };
-
-    ($level:ident message = $msg:expr $(, { $($extra_key:ident: $extra_val:expr),+ })? $(,$key:ident = $val:expr)*) => {
-        crate::types::Data {
+        $crate::types::Data {
             body: $crate::types::Body::MessageBody {
                 telemetry: None,
                 message: $crate::types::Message {
                     body: $msg.into(),
-                    extra: map!{$($($extra_key : $extra_val),+)?},
+                    extra: $crate::map!{$($($extra_key : $extra_val),+)?},
                 }
             },
-            level: Some($crate::Level::$level),
             notifier: Some($crate::types::Notifier {
                 name: Some("SierraSoftworks/rollbar-rs".into()),
                 version: Some($crate::VERSION.into()),
             }),
-            uuid: Some($crate::models::new_uuid()),
             $($key: Some($val.into()),)*
             ..Default::default()
         }
     };
 
     (error = $err:expr $(,$key:ident = $val:expr)*) => {
-        rollbar_format!(Error error = $err $(,$key = $val)*)
-    };
-
-    ($level:ident error = $err:expr $(,$key:ident = $val:expr)*) => {
         {
             let backtrace = backtrace::Backtrace::new();
             let line = line!() - 3;
@@ -114,23 +124,37 @@ macro_rules! rollbar_format {
                 ..Default::default()
             });
 
-            crate::types::Data {
+            $crate::types::Data {
                 body: $crate::types::Body::TraceBody {
                     telemetry: None,
                     trace: $crate::types::Trace {
-                        exception: $crate::macros::get_exception(&$err),
+                        exception: $crate::helpers::get_exception(&$err),
                         frames: frames,
                     }
                 },
-                level: Some($crate::Level::$level),
                 notifier: Some($crate::types::Notifier {
                     name: Some("SierraSoftworks/rollbar-rs".into()),
                     version: Some($crate::VERSION.into()),
                 }),
-                uuid: Some($crate::models::new_uuid()),
                 $($key: Some($val.into()),)*
                 ..Default::default()
             }
+        }
+    };
+
+    ($level:ident message = $msg:expr $(, { $($extra_key:ident: $extra_val:expr),+ })? $(,$key:ident = $val:expr)*) => {
+        {
+            let mut data = $crate::rollbar_format!(message = $msg $(, { $($extra_key: $extra_val),+ })? $(,$key = $val)*);
+            data.level = Some($crate::Level::$level);
+            data
+        }
+    };
+
+    ($level:ident error = $err:expr $(,$key:ident = $val:expr)*) => {
+        {
+            let mut data = $crate::rollbar_format!(error = $err $(,$key = $val)*);
+            data.level = Some($crate::Level::$level);
+            data
         }
     };
 }
@@ -143,6 +167,8 @@ macro_rules! rollbar_format {
 /// 
 /// # Examples
 /// ```rust
+/// use rollbar_rs::*;
+/// 
 /// rollbar!(message = "Example with custom data", custom = map!{ foo: "bar" });
 /// ```
 #[macro_export]
@@ -192,7 +218,7 @@ macro_rules! handle_panics {
                 vec![]
             };
 
-            $crate::report_raw(crate::types::Data {
+            $crate::report($crate::types::Data {
                 body: $crate::types::Body::TraceBody {
                     telemetry: None,
                     trace: $crate::types::Trace {
@@ -210,30 +236,11 @@ macro_rules! handle_panics {
                     name: Some("SierraSoftworks/rollbar-rs".into()),
                     version: Some($crate::VERSION.into()),
                 }),
-                uuid: Some($crate::models::new_uuid()),
                 $($key: Some($val.into()),)*
                 ..Default::default()
             });
         }));
     };
-}
-
-/// Gets a Rollbar exception object representing the provided `std::errors::Error`.
-///
-/// This method is used to allow Rollbar to automatically capture information about
-/// the type of exception which was raised, as well as its message and description.
-///
-/// It is intended to be called, primarily, by the trace!() macro and generally should
-/// not be called by an end user themselves.
-#[allow(dead_code)]
-pub fn get_exception<T>(err: &T) -> crate::types::Exception
-    where T: std::error::Error
-{
-    crate::types::Exception {
-        class: std::any::type_name::<T>().to_owned(),
-        message: Some(err.to_string()),
-        description: err.source().map_or_else(|| Some(format!("{:#?}", err)), |s| Some(format!("{:#?}", s))),
-    }
 }
 
 #[cfg(test)]
@@ -242,6 +249,7 @@ mod tests {
 
     #[test]
     fn test_report() {
+        rollbar!(message = "Hello, world!");
         rollbar!(Debug message= "Hello, world!", environment = "production", context = "test", custom = map!{foo: "bar"});
     }
 

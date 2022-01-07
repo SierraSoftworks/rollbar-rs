@@ -4,6 +4,7 @@ extern crate serde;
 mod client;
 mod configuration;
 mod errors;
+pub mod helpers;
 mod macros;
 mod models;
 mod transport;
@@ -79,48 +80,14 @@ pub fn set_custom(key: &str, value: serde_json::Value) {
     }
 }
 
-
-macro_rules! set_default {
-    ($data:ident [ $field:ident ] from $config:ident) => {
-        if $data.$field.is_none() && $config.$field.is_some() {
-            $data.$field = $config.$field.clone();
-        }
-    };
-
-    ($data:ident [ $field:ident ] from $config:ident [ $sfield:ident ]) => {
-        if $data.$field.is_none() && $config.$field.is_some() {
-            $data.$field = $config.$sfield.clone();
-        }
-    };
-
-    ($data:ident [ $field:ident ] = $default:expr) => {
-        if $data.$field.is_none() {
-            $data.$field = Some($default);
-        }
-    };
-}
-
-pub fn report_raw(data: types::Data) {
+pub fn report(data: types::Data) {
     let config = CONFIG.read().unwrap();
 
-    let mut data = data;
-    if let Some(ref environment) = config.environment {
-        data.environment = Some(environment.clone());
-    }
+    let cfg: &Configuration = &config;
 
-    set_default!(data[level] = Level::Info);
-    set_default!(data[language] = "rust".to_string());
+    let payload: models::Item = (data, cfg).into();
 
-    set_default!(data[environment] from config);
-    set_default!(data[code_version] from config);
-    set_default!(data[platform] from config);
-    set_default!(data[framework] from config);
-    set_default!(data[context] from config);
-    set_default!(data[custom] from config);
-
-    set_default!(data[platform] = std::env::consts::OS.to_string());
-
-    if let Some(level) = data.level.clone() {
+    if let Some(level) = payload.data.level.clone() {
         if level < config.log_level {
             return;
         }
@@ -128,9 +95,7 @@ pub fn report_raw(data: types::Data) {
 
     TRANSPORT.send(TransportEvent {
         config: &config,
-        payload: models::Item {
-            data
-        }
+        payload,
     })
 }
 
