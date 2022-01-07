@@ -35,6 +35,14 @@ lazy_static::lazy_static! {
     pub (in crate) static ref TRANSPORT: ThreadedTransport = ThreadedTransport::new(&TransportConfig::default()).unwrap();
 }
 
+/// Removes any configured access token, disabling Rollbar.
+/// 
+/// This method can be used to disable Rollbar reporting at runtime
+/// without having to recompile your application.
+pub fn unset_token() {
+    CONFIG.write().map(|mut c| c.access_token = None).unwrap();
+}
+
 pub fn set_token<S: Into<String>>(token: S) {
     CONFIG.write().map(|mut c| c.access_token = Some(token.into())).unwrap();
 }
