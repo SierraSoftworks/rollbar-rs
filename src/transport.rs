@@ -1,4 +1,9 @@
+#[cfg(feature = "async")]
+use std::sync::Arc;
+
+#[cfg(feature = "threaded")]
 use std::sync::{mpsc::{channel, Sender, Receiver}, Mutex};
+
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use crate::models::Item;
@@ -164,6 +169,7 @@ impl Transport for ThreadedTransport {
     }
 }
 
+#[cfg(feature = "threaded")]
 impl Drop for ThreadedTransport {
     fn drop(&mut self) {
         self.chan.lock().map(|ch| ch.send(None)).ok();
