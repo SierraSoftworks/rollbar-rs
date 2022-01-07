@@ -82,6 +82,8 @@ pub fn set_custom<S: Into<String>>(key: S, value: serde_json::Value) {
 }
 
 pub fn report(data: types::Data) {
+    lazy_static::initialize(&TRANSPORT);
+
     let config = CONFIG.read().unwrap();
 
     let cfg: &Configuration = &config;

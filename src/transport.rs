@@ -2,9 +2,9 @@
 use std::sync::Arc;
 
 #[cfg(feature = "threaded")]
-use std::sync::{mpsc::{sync_channel, SyncSender, Receiver}, Mutex};
+use std::sync::{Arc, Condvar, mpsc::{sync_channel, SyncSender, Receiver}};
 
-use std::time::Duration;
+use std::{time::Duration, sync::Mutex};
 use serde::{Deserialize, Serialize};
 use crate::models::Item;
 use crate::{Configuration, Error};
@@ -110,7 +110,9 @@ impl Transport for TokioTransport {
 #[cfg(feature = "threaded")]
 #[derive(Debug)]
 pub struct ThreadedTransport {
-    chan: Mutex<SyncSender<Option<(String, Item)>>>,
+    chan: SyncSender<Option<(String, Item)>>,
+    running: Arc<Mutex<bool>>,
+    running_changed: Arc<Condvar>,
     _thread: std::thread::JoinHandle<()>,
 }
 
@@ -138,33 +140,57 @@ impl Transport for ThreadedTransport {
         let endpoint = config.endpoint.clone();
         
         let (tx, rx): (SyncSender<Option<(String, Item)>>, Receiver<Option<(String, Item)>>) = sync_channel(100);
-        let thread = std::thread::spawn(move || {
-            while let Some((access_token, item)) = rx.recv().unwrap_or(None) {
-                let mut req = client
-                    .post(endpoint.as_str())
-                    .json(&item);
+        let running = Arc::new(Mutex::new(true));
+        let running_changed = Arc::new(Condvar::new());
+
+
         
-                if let Some(mut access_token) = reqwest::header::HeaderValue::from_str(access_token.as_str()).ok() {
-                    access_token.set_sensitive(true);
-                    req = req.header("X-Rollbar-Access-Token", access_token);
+        let thread = {
+            let running = running.clone();
+            let running_changed = running_changed.clone();
+
+            std::thread::spawn(move || {
+                while let Some((access_token, item)) = rx.recv().unwrap_or(None) {
+                    debug!("ThreadedTransport: Received item to send to Rollbar");
+                    let mut req = client
+                        .post(endpoint.as_str())
+                        .json(&item);
+            
+                    if let Some(mut access_token) = reqwest::header::HeaderValue::from_str(access_token.as_str()).ok() {
+                        access_token.set_sensitive(true);
+                        req = req.header("X-Rollbar-Access-Token", access_token);
+                    }
+            
+                    debug!("ThreadedTransport: Sending item to Rollbar");
+                    match req.send() {
+                        Ok(resp) => debug!("Successfully sent payload to Rollbar: {}", resp.json().ok().and_then(|r: RollbarResponse| serde_json::to_string_pretty(&r).ok()).unwrap_or_default()),
+                        Err(e) => error!("We could not send the payload to Rollbar: {}", e),
+                    };
                 }
-        
-                match req.send() {
-                    Ok(resp) => debug!("Successfully sent payload to Rollbar: {}", resp.json().ok().and_then(|r: RollbarResponse| serde_json::to_string_pretty(&r).ok()).unwrap_or_default()),
-                    Err(e) => error!("We could not send the payload to Rollbar: {}", e),
-                };
-            }
-        });
+
+                let mut is_running = running.lock().unwrap();
+                *is_running = false;
+                running_changed.notify_all();
+
+                info!("ThreadedTransport: Exiting thread");
+            })
+        };
 
         Ok(Self {
-            chan: Mutex::new(tx),
+            chan: tx,
+            running,
+            running_changed,
             _thread: thread,
         })
     }
 
     fn send(&self, event: TransportEvent) {
         if let Some(access_token) = event.config.access_token.clone() {
-            self.chan.lock().map(|ch| ch.try_send(Some((access_token, event.payload)))).ok();
+            self.chan.send(Some((access_token, event.payload))).unwrap_or_else(|e| {
+                error!("We could not send the payload to Rollbar: {}", e);
+            });
+        } else {
+            debug!("Skipping sending payload to Rollbar since there is no access token");
         }
     }
 }
@@ -172,7 +198,10 @@ impl Transport for ThreadedTransport {
 #[cfg(feature = "threaded")]
 impl Drop for ThreadedTransport {
     fn drop(&mut self) {
-        self.chan.lock().map(|ch| ch.send(None)).ok();
+        self.chan.send(None).ok();
+
+        let is_running = self.running.lock().unwrap();
+        self.running_changed.wait_timeout(is_running, Duration::from_secs(5)).ok();
     }
 }
 
@@ -187,4 +216,43 @@ struct RollbarResponse {
 struct RollbarResultSuccess {
     id: Option<String>,
     uuid: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::*;
+    use super::*;
+    use httptest::{Server, Expectation, matchers::*, responders::*};
+
+    #[test_log::test]
+    #[cfg(feature = "threaded")]
+    fn test_threaded_transport() {
+        let server = Server::run();
+        server.expect(
+            Expectation::matching(request::method_path("POST", "/api/1/item/"))
+                .respond_with(status_code(200))
+        );
+
+        let transport = ThreadedTransport::new(&TransportConfig {
+            endpoint: server.url("/api/1/item/").to_string(),
+            timeout: Duration::from_millis(100),
+            proxy: None,
+        }).unwrap();
+
+        let config = Configuration {
+            access_token: Some("12345".to_string()),
+            ..Default::default()
+        };
+
+        debug!("Queueing item to send to Rollbar");
+
+        transport.send(TransportEvent {
+            config: &config,
+            payload: models::Item {
+                data: rollbar_format!(message = "Test message"),
+            },
+        });
+
+        debug!("Item queued for send to Rollbar");
+    }
 }
