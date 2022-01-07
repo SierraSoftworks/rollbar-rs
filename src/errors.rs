@@ -1,0 +1,1 @@
+human_errors::error_shim!(Error);
