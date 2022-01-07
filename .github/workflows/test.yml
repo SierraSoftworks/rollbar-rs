@@ -23,7 +23,13 @@ jobs:
       with:
         profile: minimal
         override: true
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+    - name: cargo build
+      uses: actions-rs/cargo@v1.0.3
+      with:
+        command: build
+
+    - name: cargo test
+      uses: actions-rs/cargo@v1.0.3
+      with:
+        command: test
+        args: --no-fail-fast
