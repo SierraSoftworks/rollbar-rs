@@ -2,7 +2,7 @@
 use std::sync::Arc;
 
 #[cfg(feature = "threaded")]
-use std::sync::{mpsc::{channel, Sender, Receiver}, Mutex};
+use std::sync::{mpsc::{sync_channel, SyncSender, Receiver}, Mutex};
 
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
@@ -110,7 +110,7 @@ impl Transport for TokioTransport {
 #[cfg(feature = "threaded")]
 #[derive(Debug)]
 pub struct ThreadedTransport {
-    chan: Mutex<Sender<Option<(String, Item)>>>,
+    chan: Mutex<SyncSender<Option<(String, Item)>>>,
     _thread: std::thread::JoinHandle<()>,
 }
 
@@ -137,7 +137,7 @@ impl Transport for ThreadedTransport {
         ))?;
         let endpoint = config.endpoint.clone();
         
-        let (tx, rx): (Sender<Option<(String, Item)>>, Receiver<Option<(String, Item)>>) = channel();
+        let (tx, rx): (SyncSender<Option<(String, Item)>>, Receiver<Option<(String, Item)>>) = sync_channel(100);
         let thread = std::thread::spawn(move || {
             while let Some((access_token, item)) = rx.recv().unwrap_or(None) {
                 let mut req = client
@@ -164,7 +164,7 @@ impl Transport for ThreadedTransport {
 
     fn send(&self, event: TransportEvent) {
         if let Some(access_token) = event.config.access_token.clone() {
-            self.chan.lock().map(|ch| ch.send(Some((access_token, event.payload)))).ok();
+            self.chan.lock().map(|ch| ch.try_send(Some((access_token, event.payload)))).ok();
         }
     }
 }
