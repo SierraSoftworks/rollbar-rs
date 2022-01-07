@@ -35,48 +35,48 @@ lazy_static::lazy_static! {
     pub (in crate) static ref TRANSPORT: ThreadedTransport = ThreadedTransport::new(&TransportConfig::default()).unwrap();
 }
 
-pub fn set_token<S: ToString>(token: S) {
-    CONFIG.write().unwrap().access_token = Some(token.to_string());
+pub fn set_token<S: Into<String>>(token: S) {
+    CONFIG.write().unwrap().access_token = Some(token.into());
 }
 
-pub fn set_environment<S: ToString>(environment: S) {
-    CONFIG.write().unwrap().environment = Some(environment.to_string());
+pub fn set_environment<S: Into<String>>(environment: S) {
+    CONFIG.write().unwrap().environment = Some(environment.into());
 }
 
-pub fn set_host<S: ToString>(host: S) {
-    CONFIG.write().unwrap().host = Some(host.to_string());
+pub fn set_host<S: Into<String>>(host: S) {
+    CONFIG.write().unwrap().host = Some(host.into());
 }
 
-pub fn set_code_version<S: ToString>(code_version: S) {
-    CONFIG.write().unwrap().code_version = Some(code_version.to_string());
+pub fn set_code_version<S: Into<String>>(code_version: S) {
+    CONFIG.write().unwrap().code_version = Some(code_version.into());
 }
 
 pub fn set_log_level(level: types::Level) {
     CONFIG.write().unwrap().log_level = level;
 }
 
-pub fn set_platform<S: ToString>(platform: S) {
-    CONFIG.write().unwrap().platform = Some(platform.to_string());
+pub fn set_platform<S: Into<String>>(platform: S) {
+    CONFIG.write().unwrap().platform = Some(platform.into());
 }
 
-pub fn set_framework<S: ToString>(framework: S) {
-    CONFIG.write().unwrap().framework = Some(framework.to_string());
+pub fn set_framework<S: Into<String>>(framework: S) {
+    CONFIG.write().unwrap().framework = Some(framework.into());
 }
 
-pub fn set_context<S: ToString>(context: S) {
-    CONFIG.write().unwrap().context = Some(context.to_string());
+pub fn set_context<S: Into<String>>(context: S) {
+    CONFIG.write().unwrap().context = Some(context.into());
 }
 
-pub fn set_custom(key: &str, value: serde_json::Value) {
+pub fn set_custom<S: Into<String>>(key: S, value: serde_json::Value) {
     let mut config = CONFIG.write().unwrap();
 
     match config.custom {
         Some(ref mut custom) => {
-            custom.insert(key.to_string(), value);
+            custom.insert(key.into(), value);
         },
         None => {
             config.custom = Some(HashMap::new());
-            config.custom.as_mut().unwrap().insert(key.to_string(), value);
+            config.custom.as_mut().unwrap().insert(key.into(), value);
         }
     }
 }
