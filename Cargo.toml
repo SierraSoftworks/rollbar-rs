@@ -17,7 +17,7 @@ serde_json = "1.0"
 tokio = { version = "1.15", features = ["rt"], optional = true }
 
 [dev-dependencies]
-env_logger = "0.9"
+env_logger = "0.10"
 httptest = "0.15"
 test-log = "0.2.8"
 
